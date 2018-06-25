@@ -1,22 +1,32 @@
-#!/usr/bin/env python
-
+#! /usr/bin/env python
 import rospy
+
 from mask_rcnn_ros.msg import Result
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import PoseStamped
+from visualization_msgs.msg import MarkerArray
+from std_msgs.msg import Empty
+
+from cv_bridge import CvBridge, CvBridgeError
 import copy
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from cv_bridge import CvBridge, CvBridgeError
+import tf
+import threading
+import math
 
-class ExtrinsicParameterCalibrationNode:
+class AutoCameraLidarCalibrationPointGenerationNode:
 	def __init__(self):
 		self.bridge = CvBridge()
 
 		# parameters
-		self.detected_class_names = ['traffic light', 'tv', 'book']
+		self.detected_class_names = ['traffic light']
+		self.vector_map_info_list = []
+		self.used_vector_map_ns = ['signal']
+		self.distance_threshold = 30.0
+		self.viewing_angle = 40.0
 		# variables
 		self.screenpoint = (float(0), float(0), float(0))
 		self.ndt_pose = PoseStamped()
@@ -24,10 +34,16 @@ class ExtrinsicParameterCalibrationNode:
 		self.mask_img_pub = rospy.Publisher('~mask_img', Image, queue_size=10)
 		self.screenpoint_pub = rospy.Publisher('~screenpoint', PointStamped, queue_size=10)
 		self.clickedpoint_pub = rospy.Publisher('~clickedpoint', PointStamped, queue_size=10)
-		# subscribers
+		#subscribers
 		self.mask_rcnn_result_sub = rospy.Subscriber('~mask_rcnn_result', Result, self.mask_rcnn_result_callback)
 		self.ndt_pose_sub = rospy.Subscriber('~ndt_pose', PoseStamped, self.ndt_pose_callback)
-	
+		self.vector_map_sub = rospy.Subscriber('~vector_map', MarkerArray, self.vector_map_callback)
+		self.parameter_changed_sub = rospy.Subscriber('~parameter_changed', Empty, self.parameter_changed_callback)
+		# tf_thread
+		self.tf_cycle = 0.1
+		th_thread = threading.Thread(target=self.th_threading)
+		th_thread.start()
+
 	def run(self):
 		if __name__ == '__main__':
 			rospy.spin()
@@ -93,10 +109,58 @@ class ExtrinsicParameterCalibrationNode:
 
 	def ndt_pose_callback(self, ndt_pose):
 		self.ndt_pose = ndt_pose
+		rospy.loginfo("[%s] In ndt_pose_callback", self.__class__.__name__)
+		rospy.loginfo("ndt_pose:")
+		print(self.ndt_pose)
+		
+		markers_count = 0
+		for i, marker in enumerate(self.vector_map_info_list):
+			x_squared = (marker.pose.position.x - self.ndt_pose.pose.position.x) * (marker.pose.position.x - self.ndt_pose.pose.position.x)
+			y_squared = (marker.pose.position.y - self.ndt_pose.pose.position.y) * (marker.pose.position.y - self.ndt_pose.pose.position.y)
+			z_squared = (marker.pose.position.z - self.ndt_pose.pose.position.z) * (marker.pose.position.z - self.ndt_pose.pose.position.z)
+			distance = math.sqrt(x_squared + y_squared + z_squared)
+
+			if distance <= self.distance_threshold:
+				print("marker[" + str(i) + "]:")
+				print("ns: " + marker.ns)
+				print("position:")
+				print(marker.pose.position)
+				print("distance: " + str(distance))
+				print(" ")
+
+				markers_count+=1
+				
+		print("markers_count: " + str(markers_count))
+
+	def vector_map_callback(self, vector_map):
+		rospy.loginfo("[%s] vector_map:", self.__class__.__name__)
+		# rospy.loginfo(vector_map)
+		# add vector_map information to list for generating clicked point
+		for i, marker in enumerate(vector_map.markers):
+			if marker.ns in self.used_vector_map_ns:
+				rospy.loginfo("marker[%s].ns: %s", i, marker.ns)
+				self.vector_map_info_list.append(marker)
+		rospy.loginfo(" ")
+
+	def th_threading(self):
+		listener = tf.TransformListener()
+		rospy.loginfo("In th_threading")
+
+		while not rospy.is_shutdown:
+			now = rospy.Time(0)
+			listener.waitForTransform("/world", "/base_link", now, rospy.Duration(self.tf_cycle))
+			(self.trans, self.rot) = listener.lookupTransform("/world", "/base_link", now)
+			rospy.loginfo("Transform: %s", self.trans)
+			rospy.loginfo("Rotation: %s", self.rot)
+
+	def parameter_changed_callback(self, empty_msg):
+		self.distance_threshold = rospy.get_param('~distance_threshold', default=self.distance_threshold)
+		print("[" + self.__class__.__name__ + "] Parameters changed:")
+		print("\t distance_threshold: " + self.distance_threshold)
 
 def main():
 	rospy.init_node('extrinsic_parameter_calibration_node')
-	node = ExtrinsicParameterCalibrationNode()
+	node = AutoCameraLidarCalibrationPointGenerationNode()
 	node.run()
 
 if __name__ == '__main__':
