@@ -25,7 +25,7 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		self.detected_class_names = ['traffic light']
 		self.vector_map_info_list = []
 		self.used_vector_map_ns = ['signal']
-		self.distance_threshold = 30.0
+		self.distance_threshold = 5.0
 		self.viewing_angle = 40.0
 		# variables
 		self.screenpoint = (float(0), float(0), float(0))
@@ -41,8 +41,8 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		self.parameter_changed_sub = rospy.Subscriber('~parameter_changed', Empty, self.parameter_changed_callback)
 		# tf_thread
 		self.tf_cycle = 0.1
-		th_thread = threading.Thread(target=self.th_threading)
-		th_thread.start()
+		tf_thread = threading.Thread(target=self.tf_threading)
+		tf_thread.start()
 
 	def run(self):
 		if __name__ == '__main__':
@@ -56,11 +56,11 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		for (i, class_name) in enumerate(result.class_names):
 			if class_name in self.detected_class_names:
 				target_detected = True
-				rospy.loginfo("[MaskRCNN] ID: %d", i)
-				rospy.loginfo("[MaskRCNN] Class name: %s", result.class_names[i])
-				rospy.loginfo("[MaskRCNN] Score: %f", result.scores[i])
-				rospy.loginfo("[MaskRCNN] Bound: x_offset=%f, y_offset=%f", result.boxes[i].x_offset, result.boxes[i].y_offset)
-				rospy.loginfo("[MaskRCNN]        height=%d, width=%d, do_rectify=%s", result.boxes[i].height, result.boxes[i].width, result.boxes[i].do_rectify)
+				# rospy.loginfo("[MaskRCNN] ID: %d", i)
+				# rospy.loginfo("[MaskRCNN] Class name: %s", result.class_names[i])
+				# rospy.loginfo("[MaskRCNN] Score: %f", result.scores[i])
+				# rospy.loginfo("[MaskRCNN] Bound: x_offset=%f, y_offset=%f", result.boxes[i].x_offset, result.boxes[i].y_offset)
+				# rospy.loginfo("[MaskRCNN]        height=%d, width=%d, do_rectify=%s", result.boxes[i].height, result.boxes[i].width, result.boxes[i].do_rectify)
 				# rospy.loginfo(result.masks[i])
 
 				screenpoint = self.get_center_of_gravity(result.masks[i])
@@ -109,28 +109,28 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 
 	def ndt_pose_callback(self, ndt_pose):
 		self.ndt_pose = ndt_pose
-		rospy.loginfo("[%s] In ndt_pose_callback", self.__class__.__name__)
-		rospy.loginfo("ndt_pose:")
-		print(self.ndt_pose)
+		# rospy.loginfo("[%s] In ndt_pose_callback", self.__class__.__name__)
+		# rospy.loginfo("ndt_pose:")
+		# print(self.ndt_pose)
 		
-		markers_count = 0
-		for i, marker in enumerate(self.vector_map_info_list):
-			x_squared = (marker.pose.position.x - self.ndt_pose.pose.position.x) * (marker.pose.position.x - self.ndt_pose.pose.position.x)
-			y_squared = (marker.pose.position.y - self.ndt_pose.pose.position.y) * (marker.pose.position.y - self.ndt_pose.pose.position.y)
-			z_squared = (marker.pose.position.z - self.ndt_pose.pose.position.z) * (marker.pose.position.z - self.ndt_pose.pose.position.z)
-			distance = math.sqrt(x_squared + y_squared + z_squared)
+		# markers_count = 0
+		# for i, marker in enumerate(self.vector_map_info_list):
+		# 	x_squared = (marker.pose.position.x - self.ndt_pose.pose.position.x) * (marker.pose.position.x - self.ndt_pose.pose.position.x)
+		# 	y_squared = (marker.pose.position.y - self.ndt_pose.pose.position.y) * (marker.pose.position.y - self.ndt_pose.pose.position.y)
+		# 	z_squared = (marker.pose.position.z - self.ndt_pose.pose.position.z) * (marker.pose.position.z - self.ndt_pose.pose.position.z)
+		# 	distance = math.sqrt(x_squared + y_squared + z_squared)
 
-			if distance <= self.distance_threshold:
-				print("marker[" + str(i) + "]:")
-				print("ns: " + marker.ns)
-				print("position:")
-				print(marker.pose.position)
-				print("distance: " + str(distance))
-				print(" ")
+		# 	if distance <= self.distance_threshold:
+		# 		print("marker[" + str(i) + "]:")
+		# 		print("ns: " + marker.ns)
+		# 		print("position:")
+		# 		print(marker.pose.position)
+		# 		print("distance: " + str(distance))
+		# 		print(" ")
 
-				markers_count+=1
+		# 		markers_count+=1
 				
-		print("markers_count: " + str(markers_count))
+		# print("markers_count: " + str(markers_count))
 
 	def vector_map_callback(self, vector_map):
 		rospy.loginfo("[%s] vector_map:", self.__class__.__name__)
@@ -142,16 +142,45 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 				self.vector_map_info_list.append(marker)
 		rospy.loginfo(" ")
 
-	def th_threading(self):
+	def tf_threading(self):
 		listener = tf.TransformListener()
-		rospy.loginfo("In th_threading")
 
-		while not rospy.is_shutdown:
+		while not rospy.is_shutdown():
+			# rospy.loginfo("[%s] In tf_threading", self.__class__.__name__)
+
 			now = rospy.Time(0)
-			listener.waitForTransform("/world", "/base_link", now, rospy.Duration(self.tf_cycle))
-			(self.trans, self.rot) = listener.lookupTransform("/world", "/base_link", now)
-			rospy.loginfo("Transform: %s", self.trans)
-			rospy.loginfo("Rotation: %s", self.rot)
+			try:
+				listener.waitForTransform("/map", "/base_link", now, rospy.Duration(self.tf_cycle))
+			except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+				continue
+
+			(self.trans, self.rot) = listener.lookupTransform("/map", "/base_link", now)
+			# rospy.loginfo("Transform: (%f, %f, %f)", self.trans[0], self.trans[1], self.trans[2])
+			# print("")
+
+			markers_count = 0
+			# print(self.vector_map_info_list)
+			for i, marker in enumerate(self.vector_map_info_list):
+				x_squared = (marker.pose.position.x - self.trans[0]) * (marker.pose.position.x - self.trans[0])
+				y_squared = (marker.pose.position.y - self.trans[1]) * (marker.pose.position.y - self.trans[1])
+				z_squared = (marker.pose.position.z - self.trans[2]) * (marker.pose.position.z - self.trans[2])
+				distance = math.sqrt(x_squared + y_squared + z_squared)
+				# print("distance: " + str(distance))
+
+				if distance <= self.distance_threshold:
+					# print("marker[" + str(i) + "]:")
+					# print("ns: " + marker.ns)
+					# print("position:")
+					# print(marker.pose.position)
+					# print("distance: " + str(distance))
+					# print(" ")
+
+					markers_count+=1
+
+			if markers_count >0:
+				print("markers_count: " + str(markers_count))
+			else:
+				pass
 
 	def parameter_changed_callback(self, empty_msg):
 		self.distance_threshold = rospy.get_param('~distance_threshold', default=self.distance_threshold)
