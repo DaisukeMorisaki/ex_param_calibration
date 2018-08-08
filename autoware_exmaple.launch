@@ -8,9 +8,11 @@
         args="-l $(find mask_rcnn_ros)/examples/rgbd_dataset_freiburg3_long_office_household.bag" /> -->
 
 	<node name="auto_camera_lidar_calibration_point_generator" pkg="auto_camera_lidar_calibrator" type="auto_camera_lidar_calibration_point_generation_node.py" output="screen">
-		<remap from="~mask_rcnn_result" to="/mask_rcnn/result"/>
-		<remap from="~ndt_pose" to="/ndt_pose"/>
-		<remap from="~vector_map" to="/vector_map"/>
+		<remap from="mask_rcnn_result" to="/mask_rcnn/result"/>
+		<remap from="ndt_pose" to="/ndt_pose"/>
+		<remap from="vector_map" to="/vector_map"/>
+		<remap from="clickedpoint" to="/clickedpoint"/>
+		<remap from="screenpoint" to="/image_rectified/screenpoint"/>
 	</node>
 	<node name="mask_image_view" pkg="image_view" type="image_view">
 		<remap from="image" to="auto_camera_lidar_calibration_point_generator/mask_img"/>
