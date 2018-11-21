@@ -21,6 +21,9 @@ import tf
 import math
 import random
 
+import tf2_ros
+import geometry_msgs.msg
+
 class AutoCameraLidarCalibrationPointGenerationNode:
 	def __init__(self):
 		# parameters
@@ -63,6 +66,44 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		self.vector_map_pole_sub   = rospy.Subscriber('vector_map_info/pole', PoleArray, self.pole_callback)
 		self.vector_map_vector_sub = rospy.Subscriber('vector_map_info/vector', VectorArray, self.vector_callback)
 		self.vector_map_point_sub  = rospy.Subscriber('vector_map_info/point', PointArray, self.point_callback)
+
+		# static broadcasters debug
+		self.signal_broadcasters = []
+
+		if self.signals == []:
+			print("[AutoCalib] No signals have been found")
+		else:
+			# for文で信号機の数だけ回して、static_broadcasterを生成
+			for (i, signal) in enumerate(self.signals):
+				# tfの設定（チュートリアルを参考に）
+				sbc = tf2_ros.StaticTransformBroadcaster()
+				stf_stamped = geometry_msgs.msg.TransformStamped()
+
+				stf_stamped.header.stamp = rospy.Time.now()
+				stf_stamped.header.frame_id = "map"
+				child_id_string = "signal_" + str(i)
+				stf_stamped.child_frame_id = child_id_string
+
+				# 信号機の座標はworld基準？map基準？
+				pole   = self.get_pole_by_plid(self.signals[i].plid)
+				vector = self.get_vector_by_vid(self.signals[i].vid)
+				point  = self.get_point_by_pid(vector.pid)
+				hang   = vector.hang
+				vang   = vector.vang
+
+				stf_stamped.transform.translation.x = point.bx
+				stf_stamped.transform.translation.y = point.ly
+				stf_stamped.transform.translation.z = point.height
+				# rotationは仮
+				stf_stamped.transform.rotation.x = 0
+				stf_stamped.transform.rotation.y = 0
+				stf_stamped.transform.rotation.z = 0
+				stf_stamped.transform.rotation.w = 1
+				sbc.sendTransform(stf_stamped)
+
+				self.signal_broadcasters.append(sbc)
+				# キャリブレーションが終了したら、ブロードキャスターのオブジェクトを掃除しないといけない
+
 
 		self.debug_mode = True
 
@@ -209,6 +250,17 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 				distance  = math.sqrt(x_squared + y_squared)
 
 				if distance <= self.distance_threshold_for_extraction:
+					# signalsとsignal_bloadcastersの要素数が同じ前提で
+					target_frame_string = "/signal_" + str(i)
+					now = rospy.Time(0)
+					try:
+						self.tf_listener.waitForTransform("/velodyne", target_frame_string, now, rospy.Duration(0.1))
+						(signal_trans, signal_rot) = self.tf_listener.lookupTransform("/velodyne", target_frame_string, rospy.Time(0))
+					except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+						pass
+
+					print("signal_trans: " + str(signal_trans) + ", signal_rot: " + str(signal_rot))
+
 					# print("distance: " + str(distance) + "\n")
 					# string = "Trafficlight "  + str(i) + \
 					# 		" map bx " + str(point.bx) + \
