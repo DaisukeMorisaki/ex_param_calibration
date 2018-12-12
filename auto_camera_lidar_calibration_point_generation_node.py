@@ -70,12 +70,18 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 
 		self.debug_mode = True
 
-		self.broadcast_signal_tf()
+		self.executed = False
+
+		# self.broadcast_signal_tf()
 
 	def run(self):
 			rospy.spin()
 
 	def mask_rcnn_result_callback(self, result):
+		if self.executed == False:
+			self.executed = True
+			self.broadcast_signal_tf()
+
 		if self.debug_mode:
 			print("[AutoCalib] In callback")
 			print("[AutoCalib] Detected objects: " + str(len(result.class_names)))
@@ -86,8 +92,9 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 			return
 		
 		self.extract_screen_points(result)
-		self.publish_mask_img()
-		self.extract_clicked_points_using_distance()
+		# self.publish_mask_img()
+		# static tf debug
+		# self.extract_clicked_points_using_distance()
 
 		self.correspond_points_with_random()
 
@@ -362,13 +369,13 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 
 				stf_stamped.transform.translation.x = point.bx
 				stf_stamped.transform.translation.y = point.ly
-				stf_stamped.transform.translation.z = point.height
+				stf_stamped.transform.translation.z = 0 # point.height
 				# vectorの水平角からクォータニオンを生成
 				rot = tf.transformations.quaternion_from_euler(0, 0, vector.hang)
-				stf_stamped.transform.rotation.x = rot.x
-				stf_stamped.transform.rotation.y = rot.y
-				stf_stamped.transform.rotation.z = rot.z
-				stf_stamped.transform.rotation.w = rot.w
+				stf_stamped.transform.rotation.x = rot[0]
+				stf_stamped.transform.rotation.y = rot[1]
+				stf_stamped.transform.rotation.z = rot[2]
+				stf_stamped.transform.rotation.w = rot[3]
 				sbc.sendTransform(stf_stamped)
 
 				self.signal_broadcasters.append(sbc)
