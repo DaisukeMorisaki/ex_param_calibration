@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+# coding:utf-8
 import rospy
 
 from mask_rcnn_ros.msg import Result
@@ -67,46 +68,9 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		self.vector_map_vector_sub = rospy.Subscriber('vector_map_info/vector', VectorArray, self.vector_callback)
 		self.vector_map_point_sub  = rospy.Subscriber('vector_map_info/point', PointArray, self.point_callback)
 
-		# static broadcasters debug
-		self.signal_broadcasters = []
-
-		if self.signals == []:
-			print("[AutoCalib] No signals have been found")
-		else:
-			# for文で信号機の数だけ回して、static_broadcasterを生成
-			for (i, signal) in enumerate(self.signals):
-				# tfの設定（チュートリアルを参考に）
-				sbc = tf2_ros.StaticTransformBroadcaster()
-				stf_stamped = geometry_msgs.msg.TransformStamped()
-
-				stf_stamped.header.stamp = rospy.Time.now()
-				stf_stamped.header.frame_id = "map"
-				child_id_string = "signal_" + str(i)
-				stf_stamped.child_frame_id = child_id_string
-
-				# 信号機の座標はworld基準？map基準？
-				pole   = self.get_pole_by_plid(self.signals[i].plid)
-				vector = self.get_vector_by_vid(self.signals[i].vid)
-				point  = self.get_point_by_pid(vector.pid)
-				hang   = vector.hang
-				vang   = vector.vang
-
-				stf_stamped.transform.translation.x = point.bx
-				stf_stamped.transform.translation.y = point.ly
-				stf_stamped.transform.translation.z = point.height
-				# rotationは仮
-				stf_stamped.transform.rotation.x = 0
-				stf_stamped.transform.rotation.y = 0
-				stf_stamped.transform.rotation.z = 0
-				stf_stamped.transform.rotation.w = 1
-				sbc.sendTransform(stf_stamped)
-
-				self.signal_broadcasters.append(sbc)
-				# キャリブレーションが終了したら、ブロードキャスターのオブジェクトを掃除しないといけない
-
-
 		self.debug_mode = True
 
+		self.broadcast_signal_tf()
 
 	def run(self):
 			rospy.spin()
@@ -239,11 +203,11 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		if (len(self.signals) != 0) and (len(self.poles) != 0) and (len(self.vectors) != 0) and (len(self.points) != 0):
 			for i in range(len(self.signals)):
 				# if(i == 3 or i == 13 or i == 26 or i == 39 or i == 53):
-				pole   = self.get_pole_by_plid(self.signals[i].plid)
+				# pole   = self.get_pole_by_plid(self.signals[i].plid)
 				vector = self.get_vector_by_vid(self.signals[i].vid)
 				point  = self.get_point_by_pid(vector.pid)
-				hang   = vector.hang
-				vang   = vector.vang
+				# hang   = vector.hang
+				# vang   = vector.vang
 
 				x_squared = math.pow(point.bx - self.trans[1], 2)
 				y_squared = math.pow(point.ly - self.trans[0], 2)
@@ -352,6 +316,7 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 	def signal_callback(self, data):
 		self.signals = data.data
 		rospy.loginfo("[AutoCalib] signals.length: %s", len(self.signals))
+		# self.broadcast_signal_tf()
 
 	def pole_callback(self, data):
 		self.poles = data.data
@@ -370,6 +335,48 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 
 	def get_point_by_pid(self, pid):
 		return self.points[pid-1]
+
+	def broadcast_signal_tf(self):
+		# static broadcasters debug
+		print("broadcast_signal_tf")
+		self.signal_broadcasters = []
+
+		if self.signals == []:
+			print("[AutoCalib] No signals have been found")
+		else:
+			# for文で信号機の数だけ回して、static_broadcasterを生成
+			for (i, signal) in enumerate(self.signals):
+				# tfの設定（チュートリアルを参考に）
+				sbc = tf2_ros.StaticTransformBroadcaster()
+				stf_stamped = geometry_msgs.msg.TransformStamped()
+
+				stf_stamped.header.stamp = rospy.Time.now()
+				stf_stamped.header.frame_id = "map"
+				child_id_string = "signal_" + str(i)
+				stf_stamped.child_frame_id = child_id_string
+
+				# 信号機の座標はworld基準？map基準？
+				# pole   = self.get_pole_by_plid(self.signals[i].plid)
+				vector = self.get_vector_by_vid(self.signals[i].vid)
+				point  = self.get_point_by_pid(vector.pid)
+
+				stf_stamped.transform.translation.x = point.bx
+				stf_stamped.transform.translation.y = point.ly
+				stf_stamped.transform.translation.z = point.height
+				# vectorの水平角からクォータニオンを生成
+				rot = tf.transformations.quaternion_from_euler(0, 0, vector.hang)
+				stf_stamped.transform.rotation.x = rot.x
+				stf_stamped.transform.rotation.y = rot.y
+				stf_stamped.transform.rotation.z = rot.z
+				stf_stamped.transform.rotation.w = rot.w
+				sbc.sendTransform(stf_stamped)
+
+				self.signal_broadcasters.append(sbc)
+				appended_str = "signal appended"
+				print(appended_str)
+
+				# キャリブレーションが終了したら、ブロードキャスターのオブジェクトを掃除しないといけない
+				# ブロードキャスターのオブジェクトはノードを終了したら削除される？この処理はひとまず保留
 
 def main():
 	rospy.init_node('auto_camera_lidar_calibration_point_generation_node')
