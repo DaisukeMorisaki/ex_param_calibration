@@ -42,6 +42,15 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		self.vectors = []
 		self.points  = []
 
+		# initialization flag
+		self.broadcasted        = False
+		self.point_initialized  = False
+		self.vector_initialized = False
+		self.pole_initialized   = False
+		self.signal_initialized = False
+
+		self.static_broadcaster = tf2_ros.StaticTransformBroadcaster()
+
 		# calibration points
 		self.screenpoints  = []
 		self.clickedpoints = []
@@ -76,15 +85,51 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 
 	def run(self):
 			rospy.spin()
+			# print("DEBUG: run")
+			# while not rospy.is_shutdown():
+			# 	print("DEBUG: not broadcasted: " + str(not self.broadcasted))
+			# 	print("DEBUG: point_initialized: " + str(self.point_initialized))
+			# 	print("DEBUG: vector_initialized: " + str(self.vector_initialized))
+			# 	print("DEBUG: pole_initialized: " + str(self.pole_initialized))
+			# 	print("DEBUG: signal_initialized: " + str(self.signal_initialized))
+			# 	if (not self.broadcasted and (self.point_initialized and self.vector_initialized and self.pole_initialized and self.signal_initialized)):
+			# 		print("DEBUG: signal, vector, ... has been initialized")
+			# 		self.send_broadcast_tf()
+			# 		print("DEBUG: static_broadcaster have been initialized")
+			# 		self.broadcasted = True
+			# 	else:
+			# 		print("DEBUG: initialization has not been completed")
+			# 	rospy.Rate(1).sleep()
+			# 	print("DEBUG: sleep")
 
 	def mask_rcnn_result_callback(self, result):
 		if self.executed == False:
 			self.executed = True
-			self.broadcast_signal_tf()
+			# self.broadcast_signal_tf()
 
 		if self.debug_mode:
 			print("[AutoCalib] In callback")
 			print("[AutoCalib] Detected objects: " + str(len(result.class_names)))
+
+
+
+		print("DEBUG: not broadcasted: " + str(not self.broadcasted))
+		print("DEBUG: point_initialized: " + str(self.point_initialized))
+		print("DEBUG: vector_initialized: " + str(self.vector_initialized))
+		print("DEBUG: pole_initialized: " + str(self.pole_initialized))
+		print("DEBUG: signal_initialized: " + str(self.signal_initialized))
+		if (not self.broadcasted and (self.point_initialized and self.vector_initialized and self.pole_initialized and self.signal_initialized)):
+			print("DEBUG: signal, vector, ... has been initialized")
+			self.send_broadcast_tf()
+			print("DEBUG: static_broadcaster have been initialized")
+			self.broadcasted = True
+		elif (self.broadcasted and self.point_initialized and self.vector_initialized and self.pole_initialized and self.signal_initialized):
+			print("DEBUG: initialization has been completed")
+		else:
+			print("DEBUG: initialization has not been completed")
+
+
+
 
 		self.get_transform()
 		moved = self.check_movement_distance()
@@ -323,16 +368,25 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 	def signal_callback(self, data):
 		self.signals = data.data
 		rospy.loginfo("[AutoCalib] signals.length: %s", len(self.signals))
+		print("DEBUG: signal initialized")
+		self.signal_initialized = True
+		print("DEBUG: number of signal: " + str(len(self.signals)))
 		# self.broadcast_signal_tf()
 
 	def pole_callback(self, data):
 		self.poles = data.data
+		print("DEBUG: pole initialized")
+		self.pole_initialized = True
 
 	def vector_callback(self, data):
 		self.vectors = data.data
+		print("DEBUG: vector initialized")
+		self.vector_initialized = True
 
 	def point_callback(self, data):
 		self.points = data.data
+		print("DEBUG: point initialized")
+		self.point_initialized = True
 
 	def get_pole_by_plid(self, plid):
 		return self.poles[plid-1]
@@ -343,7 +397,7 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 	def get_point_by_pid(self, pid):
 		return self.points[pid-1]
 
-	def broadcast_signal_tf(self):
+	def send_broadcast_tf(self):
 		# static broadcasters debug
 		print("broadcast_signal_tf")
 		self.signal_broadcasters = []
@@ -353,16 +407,19 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		else:
 			# for文で信号機の数だけ回して、static_broadcasterを生成
 			for (i, signal) in enumerate(self.signals):
+				print("DEBUG: signal" + str(i))
 				# tfの設定（チュートリアルを参考に）
-				sbc = tf2_ros.StaticTransformBroadcaster()
+				# self.static_broadcaster = tf2_ros.StaticTransformBroadcaster()
+					# 上のbroadcasterは1個でよい。__init__で行う
 				stf_stamped = geometry_msgs.msg.TransformStamped()
 
 				stf_stamped.header.stamp = rospy.Time.now()
 				stf_stamped.header.frame_id = "map"
 				child_id_string = "signal_" + str(i)
+				print("DEBUG: child_id_string: " + str(child_id_string))
 				stf_stamped.child_frame_id = child_id_string
 
-				# 信号機の座標はworld基準？map基準？
+				# 信号機の座標はmap基準
 				# pole   = self.get_pole_by_plid(self.signals[i].plid)
 				vector = self.get_vector_by_vid(self.signals[i].vid)
 				point  = self.get_point_by_pid(vector.pid)
@@ -376,10 +433,10 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 				stf_stamped.transform.rotation.y = rot[1]
 				stf_stamped.transform.rotation.z = rot[2]
 				stf_stamped.transform.rotation.w = rot[3]
-				sbc.sendTransform(stf_stamped)
+				self.static_broadcaster.sendTransform(stf_stamped)
 
-				self.signal_broadcasters.append(sbc)
-				appended_str = "signal appended"
+				# self.signal_broadcasters.append(self.static_broadcaster)
+				appended_str = "signal broadcasted"
 				print(appended_str)
 
 				# キャリブレーションが終了したら、ブロードキャスターのオブジェクトを掃除しないといけない
