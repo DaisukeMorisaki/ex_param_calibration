@@ -49,7 +49,11 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		self.pole_initialized   = False
 		self.signal_initialized = False
 
+		# static tf
 		self.static_broadcaster = tf2_ros.StaticTransformBroadcaster()
+		self.static_broadcasters = []
+		# for i in range(60):
+			# self.static_broadcasters.append(tf2_ros.StaticTransformBroadcaster())
 
 		# calibration points
 		self.screenpoints  = []
@@ -120,6 +124,10 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		print("DEBUG: signal_initialized: " + str(self.signal_initialized))
 		if (not self.broadcasted and (self.point_initialized and self.vector_initialized and self.pole_initialized and self.signal_initialized)):
 			print("DEBUG: signal, vector, ... has been initialized")
+
+			for i in range(self.number_of_signal):
+				self.static_broadcasters.append(tf2_ros.StaticTransformBroadcaster())
+
 			self.send_broadcast_tf()
 			print("DEBUG: static_broadcaster have been initialized")
 			self.broadcasted = True
@@ -370,6 +378,7 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 		rospy.loginfo("[AutoCalib] signals.length: %s", len(self.signals))
 		print("DEBUG: signal initialized")
 		self.signal_initialized = True
+		self.number_of_signal = len(self.signals)
 		print("DEBUG: number of signal: " + str(len(self.signals)))
 		# self.broadcast_signal_tf()
 
@@ -424,8 +433,8 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 				vector = self.get_vector_by_vid(self.signals[i].vid)
 				point  = self.get_point_by_pid(vector.pid)
 
-				stf_stamped.transform.translation.x = point.bx
-				stf_stamped.transform.translation.y = point.ly
+				stf_stamped.transform.translation.x = point.ly
+				stf_stamped.transform.translation.y = point.bx
 				stf_stamped.transform.translation.z = 0 # point.height
 				# vectorの水平角からクォータニオンを生成
 				rot = tf.transformations.quaternion_from_euler(0, 0, vector.hang)
@@ -433,7 +442,8 @@ class AutoCameraLidarCalibrationPointGenerationNode:
 				stf_stamped.transform.rotation.y = rot[1]
 				stf_stamped.transform.rotation.z = rot[2]
 				stf_stamped.transform.rotation.w = rot[3]
-				self.static_broadcaster.sendTransform(stf_stamped)
+				# self.static_broadcaster.sendTransform(stf_stamped)
+				self.static_broadcasters[i].sendTransform(stf_stamped)
 
 				# self.signal_broadcasters.append(self.static_broadcaster)
 				appended_str = "signal broadcasted"
